@@ -6,6 +6,9 @@ from fake_useragent import UserAgent
 from pprint import pp, pprint
 import ddddocr
 import re
+import json
+import sys
+import os
 class Spider(object):
     def __init__(self):
         self.ctx = None
@@ -42,7 +45,11 @@ class Spider(object):
     
     def read_js_code(self,file_path='decryption.js'):
         # 1. 编写或读取 JS 代码字符串
-        with open(file_path, 'r') as f:
+        # 如果文件路径不是绝对路径，尝试从脚本所在目录查找
+        if not os.path.isabs(file_path):
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            file_path = os.path.join(script_dir, file_path)
+        with open(file_path, 'r', encoding='utf-8') as f:
             js_code = f.read()
         return execjs.compile(js_code)
 
@@ -108,25 +115,20 @@ class Spider(object):
 
         
 
-    def run(self):
+    def run(self,request_params:dict=None):
         headers = self.get_random_headers()
         localStorage = self.get_local_storage(headers)
         self.ctx = self.read_js_code()
-        request_params={
-            'page': 10,
-            'title': "",
-            'project_type': ""
-        }
         encrypt_data_response = self.get_encrypt_data(request_params,headers,localStorage)
         if '"code":"511"' in encrypt_data_response.text:
             verify_flag = self.loop_handle_captcha(headers)
             if verify_flag:
                 encrypt_data_response = self.get_encrypt_data(request_params,headers,localStorage)
                 decrypt_result = self.ctx.call("decrypt_result", encrypt_data_response.text,localStorage)
-                print(decrypt_result['data']['current'])
+                return decrypt_result
         else:
             decrypt_result = self.ctx.call("decrypt_result", encrypt_data_response.text,localStorage)
-            print(decrypt_result['data']['current'])
+            return decrypt_result
 
 
 
@@ -138,9 +140,13 @@ class Spider(object):
 
 
 if __name__ == "__main__":
+    request_params = {
+        'page': 1,
+        'title': "",
+        'project_type': ""
+    }
+
     spider = Spider()
-    page_num = 0
-    for i in range(1, 100):
-        spider.run()
-        page_num = page_num + 1
-    print(page_num)
+    result = spider.run(request_params)
+    print(result)
+   
