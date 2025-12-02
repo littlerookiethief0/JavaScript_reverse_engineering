@@ -140,13 +140,41 @@ class Spider(object):
 
 
 if __name__ == "__main__":
-    request_params = {
-        'page': 1,
-        'title': "",
-        'project_type': ""
-    }
+    import sys
+    import json
+    
+    # 如果提供了命令行参数（JSON 格式），则使用它
+    if len(sys.argv) > 1:
+        try:
+            # 从命令行参数中解析 JSON
+            params_json = sys.argv[1]
+            request_params = json.loads(params_json)
+        except json.JSONDecodeError as e:
+            # 如果 JSON 解析失败，使用默认参数
+            print(json.dumps({"error": f"JSON 解析失败: {e}"}), file=sys.stderr)
+            sys.exit(1)
+    else:
+        # 如果没有提供参数，使用默认值
+        request_params = {
+            'page': 1,
+            'title': "",
+            'project_type': ""
+        }
 
-    spider = Spider()
-    result = spider.run(request_params)
-    print(result)
+    try:
+        spider = Spider()
+        result = spider.run(request_params)
+        # 将结果以 JSON 格式输出
+        if isinstance(result, dict):
+            print(json.dumps(result, ensure_ascii=False))
+        else:
+            print(json.dumps({"result": str(result)}, ensure_ascii=False))
+    except Exception as e:
+        # 如果执行出错，返回错误信息
+        error_result = {
+            "error": str(e),
+            "type": type(e).__name__
+        }
+        print(json.dumps(error_result, ensure_ascii=False), file=sys.stderr)
+        sys.exit(1)
    
