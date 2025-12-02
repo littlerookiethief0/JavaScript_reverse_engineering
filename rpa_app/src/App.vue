@@ -20,15 +20,9 @@ const features: Feature[] = [
   }
 ];
 
-// 使用 composables
+// 使用 composables（useSmtp 是单例，全局共享同一个实例）
 const spider = useSpider();
 const smtp = useSmtp();
-
-// SMTP 输入框的 ref
-const smtpServerInput = ref<HTMLInputElement | null>(null);
-const smtpPortInput = ref<HTMLInputElement | null>(null);
-const smtpUsernameInput = ref<HTMLInputElement | null>(null);
-const smtpPasswordInput = ref<HTMLInputElement | null>(null);
 
 const { setupListeners } = useEventListeners({
   onTaskResult: (data) => {
@@ -61,17 +55,6 @@ function backToList() {
 }
 
 /**
- * 从输入框读取值并保存 SMTP 配置
- */
-async function saveSmtpConfigFromInputs() {
-  smtp.server.value = smtpServerInput.value?.value || smtp.server.value;
-  smtp.port.value = smtpPortInput.value?.value ? Number(smtpPortInput.value.value) : smtp.port.value;
-  smtp.username.value = smtpUsernameInput.value?.value || smtp.username.value;
-  smtp.password.value = smtpPasswordInput.value?.value || smtp.password.value;
-  await smtp.saveConfig();
-}
-
-/**
  * 处理启动定时任务按钮点击
  */
 async function handleStartScheduledTask() {
@@ -80,11 +63,11 @@ async function handleStartScheduledTask() {
     spider.log.value = "❌ 请先勾选'启用定时任务'复选框";
     return;
   }
-  
+
   if (spider.loading.value) {
     return;
   }
-  
+
   await spider.startScheduledSpider();
 }
 
@@ -158,22 +141,21 @@ onMounted(async () => {
       <div class="config-container">
         <div class="form-section">
           <h2>📋 请求参数</h2>
-        
+
           <div class="form-row">
             <label>页码：</label>
-            <input 
-              type="number" 
-              v-model.number="spider.page"
-              min="1" 
+            <input
+              type="number"
+              v-model.number="spider.page.value"
+              min="1"
               class="number-input"
             />
           </div>
 
           <div class="form-row">
             <label>搜索关键字：</label>
-            <input 
-              :value="spider.title.value"
-              @input="(e) => spider.title.value = (e.target as HTMLInputElement).value"
+            <input
+              v-model="spider.title.value"
               placeholder="留空表示不限制"
               class="url-input"
             />
@@ -181,10 +163,7 @@ onMounted(async () => {
 
           <div class="form-row">
             <label>项目类型：</label>
-            <select 
-              :value="spider.projectType.value"
-              @change="(e) => spider.projectType.value = (e.target as HTMLSelectElement).value"
-            >
+            <select v-model="spider.projectType.value">
               <option value="全部">全部</option>
               <option value="物资">物资</option>
               <option value="工程">工程</option>
@@ -194,9 +173,8 @@ onMounted(async () => {
 
           <div class="form-row">
             <label>接收邮箱：</label>
-            <input 
-              :value="spider.email.value"
-              @input="(e) => spider.email.value = (e.target as HTMLInputElement).value"
+            <input
+              v-model="spider.email.value"
               type="email"
               placeholder="example@email.com"
               class="url-input"
@@ -205,9 +183,8 @@ onMounted(async () => {
 
           <div class="form-row">
             <label>推送内容：</label>
-            <input 
-              :value="spider.pushContent.value"
-              @input="(e) => spider.pushContent.value = (e.target as HTMLInputElement).value"
+            <input
+              v-model="spider.pushContent.value"
               type="text"
               placeholder="请输入推送内容"
               class="url-input"
@@ -216,44 +193,36 @@ onMounted(async () => {
 
           <div class="form-row">
             <label>定时执行：</label>
-            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-              <input 
-                type="date" 
-                :value="spider.date.value"
-                @input="(e) => spider.date.value = (e.target as HTMLInputElement).value"
-                class="url-input"
-                style="width: 150px; flex: 0 0 auto;"
+            <div class="time-inputs">
+              <input
+                type="date"
+                v-model="spider.date.value"
+                class="url-input date-input"
               />
-              <input 
-                type="number" 
-                :value="spider.hour.value"
-                @input="(e) => spider.hour.value = Number((e.target as HTMLInputElement).value) || 0"
-                min="0" 
+              <input
+                type="number"
+                v-model.number="spider.hour.value"
+                min="0"
                 max="23"
-                class="number-input"
-                style="width: 70px;"
+                class="number-input time-part"
                 placeholder="时"
               />
               <span>:</span>
-              <input 
-                type="number" 
-                :value="spider.minute.value"
-                @input="(e) => spider.minute.value = Number((e.target as HTMLInputElement).value) || 0"
-                min="0" 
+              <input
+                type="number"
+                v-model.number="spider.minute.value"
+                min="0"
                 max="59"
-                class="number-input"
-                style="width: 70px;"
+                class="number-input time-part"
                 placeholder="分"
               />
               <span>:</span>
-              <input 
-                type="number" 
-                :value="spider.second.value"
-                @input="(e) => spider.second.value = Number((e.target as HTMLInputElement).value) || 0"
-                min="0" 
+              <input
+                type="number"
+                v-model.number="spider.second.value"
+                min="0"
                 max="59"
-                class="number-input"
-                style="width: 70px;"
+                class="number-input time-part"
                 placeholder="秒"
               />
             </div>
@@ -261,43 +230,31 @@ onMounted(async () => {
 
           <div class="form-row">
             <label>
-              <input 
-                type="checkbox" 
-                :checked="spider.enabled.value"
-                @change="(e) => spider.enabled.value = (e.target as HTMLInputElement).checked"
-              />
+              <input type="checkbox" v-model="spider.enabled.value" />
               启用定时任务
             </label>
           </div>
 
           <div class="form-row">
             <label>
-              <input 
-                type="checkbox" 
-                :checked="spider.pushContentEnabled.value"
-                @change="(e) => spider.pushContentEnabled.value = (e.target as HTMLInputElement).checked"
-              />
+              <input type="checkbox" v-model="spider.pushContentEnabled.value" />
               启用推送内容
             </label>
           </div>
 
           <div class="form-row">
-            <label>
-              <button @click="smtp.visible.value = !smtp.visible.value" type="button" class="toggle-button">
-                {{ smtp.visible.value ? "隐藏" : "显示" }} SMTP 配置
-              </button>
-            </label>
+            <button @click="smtp.visible.value = !smtp.visible.value" type="button" class="toggle-button">
+              {{ smtp.visible.value ? "隐藏" : "显示" }} SMTP 配置
+            </button>
           </div>
 
           <div v-if="smtp.visible.value" class="smtp-config-section">
-            <h3 style="margin: 12px 0 8px 0; font-size: 14px; color: #374151;">📧 SMTP 邮件服务器配置</h3>
+            <h3>📧 SMTP 邮件服务器配置</h3>
 
             <div class="form-row">
               <label>SMTP 服务器：</label>
               <input
-                ref="smtpServerInput"
-                :value="smtp.server.value"
-                @input="(e) => smtp.server.value = (e.target as HTMLInputElement).value"
+                v-model="smtp.server.value"
                 type="text"
                 placeholder="smtp.qq.com"
                 class="url-input"
@@ -307,23 +264,18 @@ onMounted(async () => {
             <div class="form-row">
               <label>SMTP 端口：</label>
               <input
-                ref="smtpPortInput"
-                :value="smtp.port.value"
-                @input="(e) => smtp.port.value = Number((e.target as HTMLInputElement).value)"
+                v-model.number="smtp.port.value"
                 type="number"
                 min="1"
                 max="65535"
-                class="number-input"
-                style="width: 100px;"
+                class="number-input port-input"
               />
             </div>
 
             <div class="form-row">
               <label>邮箱账号：</label>
               <input
-                ref="smtpUsernameInput"
-                :value="smtp.username.value"
-                @input="(e) => smtp.username.value = (e.target as HTMLInputElement).value"
+                v-model="smtp.username.value"
                 type="email"
                 placeholder="your-email@qq.com"
                 class="url-input"
@@ -333,9 +285,7 @@ onMounted(async () => {
             <div class="form-row">
               <label>授权码：</label>
               <input
-                ref="smtpPasswordInput"
-                :value="smtp.password.value"
-                @input="(e) => smtp.password.value = (e.target as HTMLInputElement).value"
+                v-model="smtp.password.value"
                 type="password"
                 placeholder="请输入邮箱授权码"
                 class="url-input"
@@ -343,7 +293,7 @@ onMounted(async () => {
             </div>
 
             <div class="form-row">
-              <button @click="saveSmtpConfigFromInputs" class="save-button" style="margin-top: 8px;">
+              <button @click="smtp.saveConfig" class="save-button smtp-save-button">
                 💾 保存 SMTP 配置
               </button>
             </div>
@@ -353,18 +303,11 @@ onMounted(async () => {
             <button @click="spider.runSpider" :disabled="spider.loading.value">
               {{ spider.loading.value ? "进行中" : "🚀 立即执行" }}
             </button>
-            <button 
+            <button
               @click="handleStartScheduledTask"
               :disabled="!spider.enabled.value || spider.loading.value"
-              :class="[
-                'scheduled-task-button',
-                {
-                  'task-started': spider.scheduledTaskStarted.value,
-                  'task-disabled': !spider.enabled.value
-                }
-              ]"
-              :title="!spider.enabled.value ? '请先勾选启用定时任务复选框' : (spider.loading.value ? '正在执行中...' : '点击启动定时任务')"
-              style="position: relative; z-index: 1; cursor: pointer;"
+              :class="['scheduled-task-button', { 'task-started': spider.scheduledTaskStarted.value }]"
+              :title="!spider.enabled.value ? '请先勾选启用定时任务复选框' : '点击启动定时任务'"
             >
               {{ spider.scheduledTaskStarted.value ? "🔄 重新启动定时任务" : "🎯 启动定时任务" }}
             </button>
@@ -376,57 +319,57 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-    </div>
+      </div>
 
       <div class="log-section">
-        <div class="log-header">
+        <div class="section-header">
           <h2>日志信息</h2>
           <div class="header-buttons">
             <button
               @click="spider.clearLogContent"
               class="clear-button"
-              :disabled="!spider.log && !spider.status"
+              :disabled="!spider.log.value && !spider.status.value"
             >
               🗑️ 清空
             </button>
             <button
               @click="spider.copyLogContent"
               class="copy-button"
-              :disabled="!spider.log && !spider.status"
+              :disabled="!spider.log.value && !spider.status.value"
             >
               📋 复制
             </button>
           </div>
         </div>
         <div class="log-container">
-          <div class="log-content">{{ spider.log || spider.status || "暂无日志信息" }}</div>
-          <p v-if="spider.error" class="error">
-            <strong>错误：</strong>{{ spider.error }}
+          <div class="log-content">{{ spider.log.value || spider.status.value || "暂无日志信息" }}</div>
+          <p v-if="spider.error.value" class="error">
+            <strong>错误：</strong>{{ spider.error.value }}
           </p>
         </div>
       </div>
 
       <div class="response-section">
-        <div class="response-header">
+        <div class="section-header">
           <h2>响应内容</h2>
           <div class="header-buttons">
             <button
               @click="spider.clearResponseContent"
               class="clear-button"
-              :disabled="!spider.result"
+              :disabled="!spider.result.value"
             >
               🗑️ 清空
             </button>
             <button
               @click="spider.copyResponseContent"
               class="copy-button"
-              :disabled="!spider.result"
+              :disabled="!spider.result.value"
             >
               📋 复制
             </button>
           </div>
         </div>
-        <textarea 
+        <textarea
           :value="spider.result.value"
           readonly
           class="response-textarea"
@@ -496,13 +439,31 @@ textarea {
 .url-input {
   flex: 1;
   min-width: 0;
-  padding: 6px 8px;
-  font-size: 13px;
 }
 
 select {
   flex: 1;
   min-width: 0;
+}
+
+.time-inputs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.date-input {
+  width: 150px;
+  flex: 0 0 auto;
+}
+
+.time-part {
+  width: 70px;
+}
+
+.port-input {
+  width: 100px;
 }
 
 .actions {
@@ -535,57 +496,32 @@ button:hover:not(:disabled) {
 }
 
 button:disabled {
-  background: #1f2937 !important;
-  color: #ffffff !important;
-  border-color: #1f2937 !important;
-  opacity: 1;
+  background: #9ca3af;
+  color: #ffffff;
+  border-color: #9ca3af;
   cursor: not-allowed;
-}
-
-.task-disabled {
-  background: white !important;
-  color: #374151 !important;
-  border-color: #d1d5db !important;
-  cursor: not-allowed !important;
-  pointer-events: none !important;
+  opacity: 0.7;
 }
 
 .scheduled-task-button {
-  background: #1f2937 !important;
-  color: #ffffff !important;
-  border-color: #1f2937 !important;
-  cursor: pointer !important;
-  pointer-events: auto !important;
-  user-select: none !important;
-}
-
-.scheduled-task-button:not(:disabled) {
-  cursor: pointer !important;
-  pointer-events: auto !important;
+  background: #1f2937;
+  color: #ffffff;
+  border-color: #1f2937;
 }
 
 .scheduled-task-button:hover:not(:disabled) {
-  background: #374151 !important;
-  border-color: #374151 !important;
-  cursor: pointer !important;
+  background: #374151;
+  border-color: #374151;
 }
 
 .scheduled-task-button:active:not(:disabled) {
-  background: #111827 !important;
+  background: #111827;
   transform: scale(0.98);
 }
 
-.scheduled-task-button.task-started:disabled {
-  background: #9ca3af !important;
-  color: #ffffff !important;
-  border-color: #9ca3af !important;
-  cursor: not-allowed !important;
-  pointer-events: none !important;
-}
-
-.scheduled-task-button:disabled {
-  cursor: not-allowed !important;
-  pointer-events: none !important;
+.scheduled-task-button.task-started {
+  background: #059669;
+  border-color: #059669;
 }
 
 .error {
@@ -609,14 +545,15 @@ button:disabled {
   overflow-y: auto;
 }
 
-.log-header {
+.section-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
 }
 
-.log-section h2 {
+.log-section h2,
+.response-section h2 {
   margin: 0;
   font-size: 14px;
   font-weight: 600;
@@ -632,21 +569,6 @@ button:disabled {
   line-height: 1.4;
 }
 
-.response-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 6px;
-}
-
-.response-section h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #374151;
-  flex-shrink: 0;
-}
-
 .copy-button {
   padding: 6px 14px;
   font-size: 12px;
@@ -654,7 +576,6 @@ button:disabled {
   color: white;
   border: none;
   border-radius: 6px;
-  cursor: pointer;
   transition: all 0.2s;
   font-weight: 500;
 }
@@ -667,7 +588,6 @@ button:disabled {
 
 .copy-button:disabled {
   background: #9ca3af;
-  cursor: not-allowed;
   opacity: 0.6;
 }
 
@@ -678,7 +598,6 @@ button:disabled {
   color: white;
   border: none;
   border-radius: 6px;
-  cursor: pointer;
   transition: all 0.2s;
   font-weight: 500;
 }
@@ -691,7 +610,6 @@ button:disabled {
 
 .clear-button:disabled {
   background: #9ca3af;
-  cursor: not-allowed;
   opacity: 0.6;
 }
 
@@ -700,7 +618,7 @@ button:disabled {
   max-width: 100%;
   height: 200px;
   padding: 8px;
-  font-family: 'Courier New', monospace;
+  font-family: "Courier New", monospace;
   font-size: 11px;
   line-height: 1.4;
   background: #ffffff;
@@ -753,7 +671,6 @@ input[type="checkbox"] {
   color: white;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -768,13 +685,17 @@ input[type="checkbox"] {
   color: white;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
   transition: all 0.2s;
   margin-left: auto;
 }
 
 .save-button:hover {
   background: #059669;
+}
+
+.smtp-save-button {
+  margin-top: 8px;
+  margin-left: 0;
 }
 
 .test-button {
@@ -784,7 +705,6 @@ input[type="checkbox"] {
   color: white;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -794,7 +714,6 @@ input[type="checkbox"] {
 
 .test-button:disabled {
   background: #9ca3af;
-  cursor: not-allowed;
   opacity: 0.6;
 }
 
@@ -805,7 +724,6 @@ input[type="checkbox"] {
   color: white;
   border: none;
   border-radius: 4px;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -819,5 +737,11 @@ input[type="checkbox"] {
   background: #f0f9ff;
   border: 1px solid #bae6fd;
   border-radius: 6px;
+}
+
+.smtp-config-section h3 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  color: #374151;
 }
 </style>

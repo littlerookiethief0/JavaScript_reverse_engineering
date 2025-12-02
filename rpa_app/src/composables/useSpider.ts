@@ -27,8 +27,9 @@ function getDefaultDateTime() {
  * 爬虫状态管理
  */
 export function useSpider() {
+  // 获取 SMTP 单例
   const smtp = useSmtp();
-  
+
   // 请求参数
   const page = ref(1);
   const title = ref("");
@@ -54,12 +55,12 @@ export function useSpider() {
   const date = computed({
     get: () => {
       const y = year.value;
-      const m = String(month.value).padStart(2, '0');
-      const d = String(day.value).padStart(2, '0');
+      const m = String(month.value).padStart(2, "0");
+      const d = String(day.value).padStart(2, "0");
       return `${y}-${m}-${d}`;
     },
     set: (value: string) => {
-      const parts = value.split('-');
+      const parts = value.split("-");
       if (parts.length === 3) {
         year.value = parseInt(parts[0], 10);
         month.value = parseInt(parts[1], 10);
@@ -91,11 +92,7 @@ export function useSpider() {
    */
   function buildConfig(): SpiderConfig {
     return {
-      params: {
-        page: page.value,
-        title: title.value,
-        project_type: convertProjectType(projectType.value)
-      },
+      params: getSpiderParams(),
       email: email.value,
       push_content: pushContent.value,
       year: year.value,
@@ -120,66 +117,13 @@ export function useSpider() {
   }
 
   /**
-   * 重置定时任务状态
-   */
-  function resetScheduledTaskState() {
-    scheduledTaskStarted.value = false;
-    console.log("[定时任务] 定时任务状态已重置");
-  }
-
-  /**
    * 追加日志
    */
   function appendLog(message: string) {
     const timestamp = new Date().toLocaleString();
-    log.value = log.value 
-      ? `${log.value}\n${message}\n时间: ${timestamp}` 
+    log.value = log.value
+      ? `${log.value}\n${message}\n时间: ${timestamp}`
       : `${message}\n时间: ${timestamp}`;
-  }
-
-  /**
-   * 从输入框读取 SMTP 配置值
-   */
-  function readSmtpConfigFromInputs() {
-    // 使用更精确的选择器，确保能找到正确的输入框
-    const smtpSection = document.querySelector('.smtp-config-section');
-    if (!smtpSection) {
-      console.warn("[邮件发送] 未找到 SMTP 配置区域，跳过从输入框读取值");
-      return;
-    }
-    
-    // 查找服务器输入框（通过 placeholder）
-    const serverInput = smtpSection.querySelector('input[placeholder="smtp.qq.com"]') as HTMLInputElement;
-    // 查找端口输入框（在 SMTP 配置区域内的 number 类型输入框）
-    const portInput = smtpSection.querySelector('input[type="number"]') as HTMLInputElement;
-    // 查找用户名输入框（在 SMTP 配置区域内的 email 类型输入框）
-    const usernameInput = smtpSection.querySelector('input[type="email"]') as HTMLInputElement;
-    // 查找密码输入框（在 SMTP 配置区域内的 password 类型输入框）
-    const passwordInput = smtpSection.querySelector('input[type="password"]') as HTMLInputElement;
-    
-    if (serverInput && serverInput.value) {
-      smtp.server.value = serverInput.value.trim();
-      console.log("[邮件发送] 从输入框读取 server:", smtp.server.value);
-    }
-    if (portInput && portInput.value) {
-      smtp.port.value = Number(portInput.value) || 587;
-      console.log("[邮件发送] 从输入框读取 port:", smtp.port.value);
-    }
-    if (usernameInput && usernameInput.value) {
-      smtp.username.value = usernameInput.value.trim();
-      console.log("[邮件发送] 从输入框读取 username:", smtp.username.value ? "已设置" : "(空)");
-    }
-    if (passwordInput && passwordInput.value) {
-      smtp.password.value = passwordInput.value;
-      console.log("[邮件发送] 从输入框读取 password:", passwordInput.value ? "***已设置***" : "(空)");
-    }
-    
-    // 验证读取的值
-    console.log("[邮件发送] 读取后的 SMTP 配置状态:");
-    console.log("[邮件发送]   server:", smtp.server.value);
-    console.log("[邮件发送]   port:", smtp.port.value);
-    console.log("[邮件发送]   username:", smtp.username.value || "(空)");
-    console.log("[邮件发送]   password:", smtp.password.value ? "***已设置***" : "(空)");
   }
 
   /**
@@ -187,11 +131,11 @@ export function useSpider() {
    */
   function buildEmailBody(success: boolean, data?: string, errorMsg?: string): string {
     const parts: string[] = [];
-    
+
     if (pushContentEnabled.value && pushContent.value) {
       parts.push(pushContent.value);
     }
-    
+
     if (success && data) {
       parts.push(`爬虫执行成功：\n${data}`);
     } else if (errorMsg) {
@@ -199,7 +143,7 @@ export function useSpider() {
     } else {
       parts.push(success ? "爬虫执行成功，但未返回数据。" : "爬虫执行失败，但未返回错误信息。");
     }
-    
+
     return parts.join("\n\n");
   }
 
@@ -207,106 +151,59 @@ export function useSpider() {
    * 发送执行结果邮件
    */
   async function sendResultEmail(success: boolean, data?: string, errorMsg?: string) {
+    // 检查邮箱地址
     if (!email.value?.trim()) {
-      const msg = "⚠️ 未填写接收邮箱，跳过邮件发送";
-      appendLog(msg);
-      status.value = msg;
-      error.value = "未填写接收邮箱";
-      await sendNotificationWithPermission("邮件发送跳过", "未填写接收邮箱，请先填写邮箱地址");
+      appendLog("⚠️ 未填写接收邮箱，跳过邮件发送");
       return;
     }
 
     const emailValidation = smtp.validateEmail(email.value);
     if (!emailValidation.valid) {
-      const msg = `⚠️ 邮箱地址无效，跳过邮件发送: ${emailValidation.error}`;
-      appendLog(msg);
-      status.value = msg;
+      appendLog(`⚠️ 邮箱地址无效: ${emailValidation.error}`);
       error.value = emailValidation.error || "邮箱地址无效";
-      await sendNotificationWithPermission("邮件发送失败", `邮箱地址无效: ${emailValidation.error}`);
+      return;
+    }
+
+    // 检查 SMTP 配置是否完整
+    if (!smtp.isConfigComplete()) {
+      const msg = "❌ SMTP 配置不完整，无法发送邮件。请填写 SMTP 用户名和密码（QQ邮箱授权码），然后点击'保存 SMTP 配置'按钮";
+      appendLog(msg);
+      error.value = "SMTP 配置不完整";
+      await sendNotificationWithPermission("邮件发送失败", "请先完成 SMTP 配置");
       return;
     }
 
     try {
-      appendLog("📧 准备发送邮件...");
-      
-      // 先从输入框读取最新值（确保获取用户实际输入的值）
-      readSmtpConfigFromInputs();
-      
-      // 保存配置（确保后端有最新的配置）
-      try {
-        await smtp.saveConfig();
-        appendLog("✅ SMTP 配置已保存");
-      } catch (saveError) {
-        const errorMsg = saveError instanceof Error ? saveError.message : String(saveError);
-        appendLog(`⚠️ SMTP 配置保存失败: ${errorMsg}`);
-        // 继续尝试发送，可能配置已经存在
-      }
-      
-      // 检查 SMTP 配置（必须在读取输入框值之后检查）
-      if (!smtp.username.value?.trim() || !smtp.password.value?.trim()) {
-        const msg = "❌ SMTP 配置不完整，无法发送邮件。请填写 SMTP 用户名和密码（QQ邮箱授权码），然后点击'保存 SMTP 配置'按钮";
-        appendLog(msg);
-        status.value = msg;
-        error.value = "SMTP 配置不完整";
-        await sendNotificationWithPermission("邮件发送失败", "请先配置 SMTP 服务器（QQ邮箱: smtp.qq.com, 端口: 587）");
-        return;
-      }
-      
-      appendLog("✅ SMTP 配置完整，将使用 SMTP 服务器发送");
+      appendLog("📧 正在发送邮件...");
 
       const subject = "爬虫任务执行结果";
       const body = buildEmailBody(success, data, errorMsg);
-      
-      // 如果邮件内容太大，截断并添加提示
+
+      // 截断过长的邮件内容
       const MAX_BODY_LENGTH = 100000;
-      const finalBody = body.length > MAX_BODY_LENGTH
-        ? body.substring(0, MAX_BODY_LENGTH) + `\n\n... (内容已截断，原始内容长度: ${body.length} 字符)`
-        : body;
-      
-      if (body.length > MAX_BODY_LENGTH) {
-        appendLog("⚠️ 邮件内容较大，已截断部分内容");
-      }
-      
-      appendLog(`📧 正在发送邮件到: ${email.value}...`);
-      console.log("[邮件发送] 调用后端发送邮件...");
-      console.log("[邮件发送] 收件人:", email.value);
-      console.log("[邮件发送] 主题:", subject);
-      console.log("[邮件发送] 内容长度:", finalBody.length, "字符");
-      console.log("[邮件发送] SMTP 服务器:", smtp.server.value);
-      console.log("[邮件发送] SMTP 端口:", smtp.port.value);
-      console.log("[邮件发送] SMTP 用户名:", smtp.username.value || "(空)");
-      console.log("[邮件发送] SMTP 密码:", smtp.password.value ? "***已设置***" : "(空)");
-      
-      const result = await invoke<string>("send_email", {
+      const finalBody =
+        body.length > MAX_BODY_LENGTH
+          ? body.substring(0, MAX_BODY_LENGTH) + `\n\n... (内容已截断，原始长度: ${body.length} 字符)`
+          : body;
+
+      const sendResult = await invoke<string>("send_email", {
         to: email.value,
         subject,
         body: finalBody
       });
 
-      console.log("[邮件发送] 后端返回结果:", result);
-
       // 检查返回结果
-      if (!result) {
-        throw new Error("邮件发送失败：后端未返回结果");
-      }
-      
-      if (result.includes("失败") || result.includes("错误") || result.includes("不可用")) {
-        throw new Error(result);
+      if (!sendResult || sendResult.includes("失败") || sendResult.includes("错误")) {
+        throw new Error(sendResult || "邮件发送失败");
       }
 
-      const successMsg = `✅ 邮件已成功发送到: ${email.value}`;
-      appendLog(successMsg);
-      status.value = successMsg;
-      error.value = "";
-      await sendNotificationWithPermission("邮件已发送", `执行结果已发送到 ${email.value}`);
+      appendLog(`✅ 邮件已发送到: ${email.value}`);
+      await sendNotificationWithPermission("邮件已发送", `结果已发送到 ${email.value}`);
     } catch (e: unknown) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      const failMsg = `❌ 邮件发送失败: ${errorMsg}`;
-      appendLog(failMsg);
-      console.error("[邮件发送] 发送失败:", e);
-      status.value = failMsg;
-      error.value = errorMsg;
-      await sendNotificationWithPermission("邮件发送失败", `错误: ${errorMsg}`);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      appendLog(`❌ 邮件发送失败: ${errMsg}`);
+      error.value = errMsg;
+      await sendNotificationWithPermission("邮件发送失败", errMsg);
     }
   }
 
@@ -316,7 +213,6 @@ export function useSpider() {
   async function runSpider() {
     resetExecutionState();
     loading.value = true;
-
     await nextTick();
 
     const startTime = Date.now();
@@ -327,36 +223,26 @@ export function useSpider() {
 
       const response = await invoke("run_spider", { params });
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      const responseStr = typeof response === "string" 
-        ? response 
-        : JSON.stringify(response, null, 2);
-      
+      const responseStr = typeof response === "string" ? response : JSON.stringify(response, null, 2);
+
       result.value = responseStr;
       status.value = "✅ 爬虫执行成功！";
       appendLog(`✅ 爬虫执行成功！\n执行耗时: ${duration} 秒`);
 
       // 执行成功后自动发送邮件
       if (email.value?.trim()) {
-        try {
-          await sendResultEmail(true, responseStr);
-        } catch (emailError) {
-          const emailErrorMsg = emailError instanceof Error ? emailError.message : String(emailError);
-          appendLog(`⚠️ 邮件发送过程出错: ${emailErrorMsg}`);
-          error.value = `邮件发送失败: ${emailErrorMsg}`;
-        }
-      } else {
-        appendLog("⚠️ 未填写接收邮箱，跳过邮件发送");
+        await sendResultEmail(true, responseStr);
       }
     } catch (e: unknown) {
       const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      error.value = errorMsg;
+      const errMsg = e instanceof Error ? e.message : String(e);
+      error.value = errMsg;
       status.value = "❌ 爬虫执行失败";
-      appendLog(`❌ 爬虫执行失败\n错误: ${errorMsg}\n执行耗时: ${duration} 秒`);
+      appendLog(`❌ 爬虫执行失败\n错误: ${errMsg}\n执行耗时: ${duration} 秒`);
 
       // 执行失败后也发送邮件通知
       if (email.value?.trim()) {
-        await sendResultEmail(false, undefined, errorMsg);
+        await sendResultEmail(false, undefined, errMsg);
       }
     } finally {
       loading.value = false;
@@ -367,25 +253,11 @@ export function useSpider() {
    * 验证执行时间是否为未来时间
    */
   function validateExecutionTime(): { valid: boolean; datetimeStr: string; error?: string } {
-    const datetimeStr = formatDateTime(
-      year.value,
-      month.value,
-      day.value,
-      hour.value,
-      minute.value,
-      second.value
-    );
-    
+    const datetimeStr = formatDateTime(year.value, month.value, day.value, hour.value, minute.value, second.value);
+
     const now = new Date();
-    const targetDate = new Date(
-      year.value,
-      month.value - 1,
-      day.value,
-      hour.value,
-      minute.value,
-      second.value
-    );
-    
+    const targetDate = new Date(year.value, month.value - 1, day.value, hour.value, minute.value, second.value);
+
     if (targetDate <= now) {
       return {
         valid: false,
@@ -393,7 +265,7 @@ export function useSpider() {
         error: `执行时间 ${datetimeStr} 已过，请选择未来的时间`
       };
     }
-    
+
     return { valid: true, datetimeStr };
   }
 
@@ -415,43 +287,38 @@ export function useSpider() {
       return;
     }
 
-    if (scheduledTaskStarted.value) {
-      scheduledTaskStarted.value = false;
-    }
-
+    // 重置定时任务状态
+    scheduledTaskStarted.value = false;
     loading.value = true;
-    
+
     try {
       const timeValidation = validateExecutionTime();
       if (!timeValidation.valid) {
         const msg = `❌ ${timeValidation.error}`;
         status.value = msg;
-        log.value = msg;
         appendLog(msg);
         return;
       }
-      
+
       const config = buildConfig();
-      log.value = `正在启动定时任务...\n执行时间: ${timeValidation.datetimeStr}\n接收邮箱: ${email.value}`;
       appendLog(`正在启动定时任务...\n执行时间: ${timeValidation.datetimeStr}\n接收邮箱: ${email.value}`);
 
       const response = await invoke("start_scheduled_spider", { config });
-      
+
       status.value = String(response);
       appendLog(String(response));
       scheduledTaskStarted.value = true;
 
-      await sendNotificationWithPermission("定时任务已启动", `爬虫任务将在 ${timeValidation.datetimeStr} 执行`);
+      await sendNotificationWithPermission("定时任务已启动", `任务将在 ${timeValidation.datetimeStr} 执行`);
     } catch (e: unknown) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      const msg = errorMsg.includes("已过")
-        ? `❌ ${errorMsg}\n\n💡 提示：请设置未来的时间（至少比当前时间晚几秒）`
-        : `❌ 启动定时任务失败: ${errorMsg}`;
-      
-      error.value = errorMsg;
+      const errMsg = e instanceof Error ? e.message : String(e);
+      const msg = errMsg.includes("已过")
+        ? `❌ ${errMsg}\n\n💡 提示：请设置未来的时间`
+        : `❌ 启动定时任务失败: ${errMsg}`;
+
+      error.value = errMsg;
       status.value = msg;
       appendLog(msg);
-      console.error("[定时任务] 启动失败:", e);
     } finally {
       loading.value = false;
     }
@@ -467,10 +334,9 @@ export function useSpider() {
       appendLog("✅ 配置信息已保存");
       await sendNotificationWithPermission("配置已保存", "配置信息已成功保存");
     } catch (e: unknown) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      appendLog(`❌ 保存配置失败: ${errorMsg}`);
-      console.error("保存配置失败:", e);
-      await sendNotificationWithPermission("保存失败", `配置保存失败: ${errorMsg}`);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      appendLog(`❌ 保存配置失败: ${errMsg}`);
+      await sendNotificationWithPermission("保存失败", errMsg);
     }
   }
 
@@ -488,13 +354,9 @@ export function useSpider() {
       const defaultDT = getDefaultDateTime();
 
       // 支持新旧两种配置格式
-      // 新格式：有 params 字段
-      // 旧格式：直接有 page、title、project_type 字段
       if (config.params) {
-        // 新格式
         page.value = config.params.page || 1;
         title.value = config.params.title || "";
-        // 将后端的 project_type 转换回前端的显示值
         const projectTypeMap: Record<string, string> = {
           "": "全部",
           "0001": "物资",
@@ -502,7 +364,6 @@ export function useSpider() {
         };
         projectType.value = projectTypeMap[config.params.project_type] || config.params.project_type || "全部";
       } else {
-        // 旧格式（向后兼容）
         page.value = config.page || 1;
         title.value = config.title || "";
         projectType.value = config.project_type || "全部";
@@ -527,19 +388,17 @@ export function useSpider() {
       enabled.value = config.enabled ?? false;
       pushContentEnabled.value = config.push_content_enabled ?? false;
 
-      console.log("配置信息已加载");
+      console.log("[Spider] 配置已加载");
     } catch (e: unknown) {
-      console.log("加载配置失败（可能文件不存在）:", e);
+      console.log("[Spider] 加载配置失败:", e);
     }
   }
 
   /**
    * 复制到剪贴板
    */
-  async function copyToClipboard(text: string, successMessage: string) {
-    if (!text) {
-      return false;
-    }
+  async function copyToClipboard(text: string, successMessage: string): Promise<boolean> {
+    if (!text) return false;
 
     try {
       await navigator.clipboard.writeText(text);
@@ -547,9 +406,8 @@ export function useSpider() {
       await sendNotificationWithPermission("复制成功", successMessage);
       return true;
     } catch (e: unknown) {
-      const errorMsg = e instanceof Error ? e.message : String(e);
-      appendLog(`❌ 复制失败: ${errorMsg}`);
-      console.error("复制失败:", e);
+      const errMsg = e instanceof Error ? e.message : String(e);
+      appendLog(`❌ 复制失败: ${errMsg}`);
       return false;
     }
   }
@@ -616,7 +474,6 @@ export function useSpider() {
     status,
     log,
     // 方法
-    getSpiderParams,
     appendLog,
     runSpider,
     startScheduledSpider,
@@ -625,7 +482,6 @@ export function useSpider() {
     copyLogContent,
     clearLogContent,
     copyResponseContent,
-    clearResponseContent,
-    resetScheduledTaskState
+    clearResponseContent
   };
 }
