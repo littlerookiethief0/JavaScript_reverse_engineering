@@ -32,7 +32,10 @@
       "icons/icon.ico"
     ],
     "resources": {
-      "../../中国石油招标投标网/dist/spider_bin": "bin/spider_bin"
+      "../../中国石油招标投标网/spiders.py": "spiders.py",
+      "../../中国石油招标投标网/decryption.js": "decryption.js",
+      "../../中国石油招标投标网/jsencrypt.js": "jsencrypt.js",
+      "../../中国石油招标投标网/js_executor.js": "js_executor.js"
     }
   }
 }

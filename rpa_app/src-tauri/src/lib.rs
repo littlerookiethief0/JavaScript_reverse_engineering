@@ -177,18 +177,56 @@ fn get_smtp_config(app_handle: &tauri::AppHandle) -> SmtpConfig {
     }
 }
 
-fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> Result<String, String> {
-    let mut bin_path = std::path::PathBuf::new();
+// 缓存 Python 和脚本路径，避免每次都查找
+static mut CACHED_PYTHON: Option<String> = None;
+static mut CACHED_SCRIPT: Option<std::path::PathBuf> = None;
+static mut CACHED_BIN_PATH: Option<std::path::PathBuf> = None;
+static mut PATH_INITIALIZED: bool = false;
+
+fn find_python() -> Option<String> {
+    unsafe {
+        if let Some(ref python) = CACHED_PYTHON {
+            // 验证 Python 是否仍然可用
+            if Command::new(python).arg("--version").output().is_ok() {
+                return Some(python.clone());
+            }
+        }
+    }
+    
+    // 尝试常见的 Python 路径
+    let python_candidates = vec!["python3", "python"];
+    for python in python_candidates {
+        if Command::new(python).arg("--version").output().is_ok() {
+            unsafe {
+                CACHED_PYTHON = Some(python.to_string());
+            }
+            return Some(python.to_string());
+        }
+    }
+    
+    None
+}
+
+fn find_spider_script(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    unsafe {
+        if PATH_INITIALIZED {
+            if let Some(ref path) = CACHED_SCRIPT {
+                if path.exists() {
+                    return Ok(path.clone());
+                }
+            }
+        }
+    }
+    
+    let mut script_path = std::path::PathBuf::new();
     let mut found = false;
     
     // 1. 优先从应用资源目录查找（打包后的应用使用此路径）
     if let Ok(resource_dir) = app_handle.path().resource_dir() {
-        let test_path = resource_dir.join("bin").join("spider_bin");
-        println!("[爬虫] 检查资源目录: {:?}", test_path);
+        let test_path = resource_dir.join("spiders.py");
         if test_path.exists() {
-            bin_path = test_path;
+            script_path = test_path;
             found = true;
-            println!("[爬虫] ✅ 在资源目录找到可执行文件");
         }
     }
     
@@ -196,12 +234,80 @@ fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> R
     if !found {
         if let Ok(mut search_dir) = std::env::current_dir() {
             for _ in 0..5 {
-                // 优先查找打包后的二进制文件
-                let test_path = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin");
+                let test_path = search_dir.join("中国石油招标投标网").join("spiders.py");
+                if test_path.exists() {
+                    script_path = test_path;
+                    found = true;
+                    break;
+                }
+                if let Some(parent) = search_dir.parent() {
+                    search_dir = parent.to_path_buf();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    
+    if !found || !script_path.exists() {
+        return Err("Python 脚本不存在".to_string());
+    }
+    
+    unsafe {
+        CACHED_SCRIPT = Some(script_path.clone());
+        PATH_INITIALIZED = true;
+    }
+    
+    Ok(script_path)
+}
+
+fn find_spider_bin(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
+    unsafe {
+        if PATH_INITIALIZED {
+            if let Some(ref path) = CACHED_BIN_PATH {
+                if path.exists() {
+                    return Ok(path.clone());
+                }
+            }
+        }
+    }
+    
+    let mut bin_path = std::path::PathBuf::new();
+    let mut found = false;
+    
+    // 1. 优先从应用资源目录查找（打包后的应用使用此路径）
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        // onedir 模式：可执行文件在 bin/spider_bin/spider_bin
+        let test_path = resource_dir.join("bin").join("spider_bin").join("spider_bin");
+        if test_path.exists() {
+            bin_path = test_path;
+            found = true;
+        } else {
+            // 兼容旧版本：单个文件在 bin/spider_bin
+            let test_path_old = resource_dir.join("bin").join("spider_bin");
+            if test_path_old.exists() && test_path_old.is_file() {
+                bin_path = test_path_old;
+                found = true;
+            }
+        }
+    }
+    
+    // 2. 从当前工作目录向上查找（开发环境使用）
+    if !found {
+        if let Ok(mut search_dir) = std::env::current_dir() {
+            for _ in 0..5 {
+                // onedir 模式：目录在 dist/spider_bin/spider_bin
+                let test_path = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin").join("spider_bin");
                 if test_path.exists() {
                     bin_path = test_path;
                     found = true;
-                    println!("[爬虫] ✅ 在工作目录找到可执行文件: {:?}", bin_path);
+                    break;
+                }
+                // 兼容旧版本：单个文件
+                let test_path_old = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin");
+                if test_path_old.exists() && test_path_old.is_file() {
+                    bin_path = test_path_old;
+                    found = true;
                     break;
                 }
                 if let Some(parent) = search_dir.parent() {
@@ -219,11 +325,16 @@ fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> R
             if let Some(exe_dir) = exe_path.parent() {
                 let mut search_dir = exe_dir.to_path_buf();
                 for _ in 0..5 {
-                    let test_path = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin");
+                    let test_path = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin").join("spider_bin");
                     if test_path.exists() {
                         bin_path = test_path;
                         found = true;
-                        println!("[爬虫] ✅ 在可执行文件目录找到: {:?}", bin_path);
+                        break;
+                    }
+                    let test_path_old = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin");
+                    if test_path_old.exists() && test_path_old.is_file() {
+                        bin_path = test_path_old;
+                        found = true;
                         break;
                     }
                     if let Some(parent) = search_dir.parent() {
@@ -238,7 +349,7 @@ fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> R
     
     if !found || !bin_path.exists() {
         let resource_path = app_handle.path().resource_dir()
-            .map(|p| p.join("bin").join("spider_bin"))
+            .map(|p| p.join("bin").join("spider_bin").join("spider_bin"))
             .unwrap_or_default();
         return Err(format!(
             "爬虫可执行文件不存在。\n已搜索路径:\n- 资源目录: {:?}\n- 当前工作目录: {:?}",
@@ -247,10 +358,49 @@ fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> R
         ));
     }
     
+    // 缓存路径
+    unsafe {
+        CACHED_BIN_PATH = Some(bin_path.clone());
+    }
+    
+    Ok(bin_path)
+}
+
+fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> Result<String, String> {
     let params_json = serde_json::to_string(&params)
         .map_err(|e| format!("序列化参数失败: {}", e))?;
     
-    // 直接执行打包后的二进制文件
+    // 优先使用系统 Python 运行脚本（速度快，1-3秒）
+    if let Some(python) = find_python() {
+        if let Ok(script_path) = find_spider_script(app_handle) {
+            let script_dir = script_path.parent().ok_or("无法获取脚本目录")?;
+            let output = Command::new(&python)
+                .arg(&script_path)
+                .arg(&params_json)
+                .current_dir(script_dir)
+                .output();
+            
+            match output {
+                Ok(output) if output.status.success() => {
+                    let result = String::from_utf8(output.stdout)
+                        .map_err(|e| format!("解析输出失败: {}", e))?;
+                    return Ok(result);
+                }
+                Ok(output) => {
+                    let error = String::from_utf8(output.stderr)
+                        .unwrap_or_else(|_| "未知错误".to_string());
+                    // Python 执行失败，继续尝试使用打包的二进制文件
+                    eprintln!("[爬虫] Python 执行失败，尝试使用打包版本: {}", error);
+                }
+                Err(_) => {
+                    // Python 不可用，继续尝试使用打包的二进制文件
+                }
+            }
+        }
+    }
+    
+    // 回退到使用打包的二进制文件
+    let bin_path = find_spider_bin(app_handle)?;
     let output = Command::new(&bin_path)
         .arg(&params_json)
         .output()
@@ -263,7 +413,7 @@ fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> R
     } else {
         let error = String::from_utf8(output.stderr)
             .unwrap_or_else(|_| "未知错误".to_string());
-        Err(format!("Python 脚本执行失败: {}", error))
+        Err(format!("爬虫执行失败: {}", error))
     }
 }
 
