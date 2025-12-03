@@ -1,28 +1,51 @@
 {
     "version": "0.2.0",
     "configurations": [
-      
-      {
-        "name": "Python: 调试当前文件",
-        "type": "python",
-        "request": "launch",
-        "program": "${file}",
-        "cwd": "${fileDirname}",
-        "console": "integratedTerminal",
-        "justMyCode": false,
-        "stopOnEntry": false,
-        "debugOptions": [
-          "DebugStdLib"
-        ]
-      },
-      {
-        "name": "Node.js: 调试当前文件",
-        "type": "node",
-        "request": "launch",
-        "program": "${file}",
-        "console": "integratedTerminal",
-        "stopOnEntry": false,
-        "internalConsoleOptions": "openOnSessionStart"
-      }
+        {
+            "name": "Python: 调试当前文件",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "cwd": "${fileDirname}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "stopOnEntry": false,
+            "debugOptions": [
+                "DebugStdLib"
+            ]
+        },
+        {
+            "name": "Node.js: 调试当前文件",
+            "type": "node",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "stopOnEntry": false,
+            "internalConsoleOptions": "openOnSessionStart"
+        },
+        {
+            "name": "Rust: 运行（编译+执行）",
+            "type": "lldb",
+            "request": "launch",
+            "preLaunchTask": "Rust: 编译当前文件",
+            "program": "${fileDirname}/${fileBasenameNoExtension}",
+            "cwd": "${fileDirname}",
+            "console": "integratedTerminal",
+            "stopOnEntry": false,
+            "sourceLanguages": ["rust"],
+            "noDebug": true
+        },
+        {
+            "name": "Rust: 调试（断点调试）",
+            "type": "lldb",
+            "request": "launch",
+            "preLaunchTask": "Rust: 编译当前文件",
+            "program": "${fileDirname}/${fileBasenameNoExtension}",
+            "cwd": "${fileDirname}",
+            "stopOnEntry": false,
+            "sourceLanguages": ["rust"],
+            "env": {},
+            "args": []
+        }
     ]
-  }
+}

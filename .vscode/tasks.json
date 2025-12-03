@@ -1,0 +1,70 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Rust: 编译当前文件",
+            "type": "shell",
+            "command": "rustc ${file} -o ${fileDirname}/${fileBasenameNoExtension}",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            },
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared",
+                "focus": false,
+                "clear": false
+            },
+            "problemMatcher": [
+                {
+                    "owner": "rustc",
+                    "fileLocation": ["relative", "${workspaceFolder}"],
+                    "pattern": {
+                        "regexp": "^(.*):(\\d+):(\\d+):\\s+(warning|error):\\s+(.*)$",
+                        "file": 1,
+                        "line": 2,
+                        "column": 3,
+                        "severity": 4,
+                        "message": 5
+                    }
+                }
+            ]
+        },
+        {
+            "label": "Rust: 清理可执行文件",
+            "type": "shell",
+            "command": "rm ${fileDirname}/${fileBasenameNoExtension}",
+            "presentation": {
+                "reveal": "silent",
+                "panel": "shared"
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Rust: 编译并运行（不清理）",
+            "dependsOn": "Rust: 编译当前文件",
+            "type": "shell",
+            "command": "${fileDirname}/${fileBasenameNoExtension}",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "focus": true
+            },
+            "problemMatcher": []
+        },
+        {
+            "label": "Rust: 编译并运行（清理）",
+            "dependsOn": "Rust: 编译当前文件",
+            "type": "shell",
+            "command": "${fileDirname}/${fileBasenameNoExtension} && rm ${fileDirname}/${fileBasenameNoExtension}",
+            "group": "build",
+            "presentation": {
+                "reveal": "always",
+                "panel": "shared",
+                "focus": true
+            },
+            "problemMatcher": []
+        }
+    ]
+}
