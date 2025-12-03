@@ -30,6 +30,9 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "resources": {
+      "../../中国石油招标投标网/dist/spider_bin": "bin/spider_bin"
+    }
   }
 }

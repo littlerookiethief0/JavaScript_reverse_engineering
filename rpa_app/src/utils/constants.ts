@@ -20,9 +20,9 @@ export const DEFAULT_EMAIL = "";
 /**
  * 默认 SMTP 配置
  */
-export const DEFAULT_SMTP = {
+export const DEFAULT_SMTP: { server: string; port: number; username: string } = {
   server: "smtp.qq.com",
   port: 587,
   username: ""
-} as const;
+};
 

@@ -15,3 +15,9 @@ function decrypt_result(res,localStorage){
     const ResultData = Buffer.from(result, 'base64').toString('utf8')
     return JSON.parse(ResultData)
 }
+
+// 导出函数供 Node.js 使用
+module.exports = {
+    decrypt_params,
+    decrypt_result
+};

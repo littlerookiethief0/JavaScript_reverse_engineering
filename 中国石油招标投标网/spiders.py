@@ -1,14 +1,27 @@
-import execjs
+import warnings
+import os
+import sys
+
+# 在导入任何可能触发警告的模块之前就抑制警告
+warnings.filterwarnings('ignore')
+os.environ['PYTHONWARNINGS'] = 'ignore'
+
 import requests
 import re
 import time
 from fake_useragent import UserAgent
 from pprint import pp, pprint
 import ddddocr
-import re
 import json
-import sys
-import os
+import subprocess
+import tempfile
+
+# 再次确保抑制 urllib3 警告
+try:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.NotOpenSSLWarning)
+except:
+    pass
 class Spider(object):
     def __init__(self):
         self.ctx = None
@@ -19,6 +32,9 @@ class Spider(object):
             "服务": "0001",
         }
         self.ocr = ddddocr.DdddOcr(show_ad=False)
+        # 获取脚本目录和 Node.js 执行器路径
+        self.script_dir = os.path.dirname(os.path.abspath(__file__))
+        self.js_executor = os.path.join(self.script_dir, 'js_executor.js')
     def get_random_headers(self):
         """生成带有随机 User-Agent 的请求头"""
         return {
@@ -43,15 +59,107 @@ class Spider(object):
         }
         return localStorage
     
-    def read_js_code(self,file_path='decryption.js'):
-        # 1. 编写或读取 JS 代码字符串
-        # 如果文件路径不是绝对路径，尝试从脚本所在目录查找
-        if not os.path.isabs(file_path):
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            file_path = os.path.join(script_dir, file_path)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            js_code = f.read()
-        return execjs.compile(js_code)
+    def _find_node(self):
+        """查找 Node.js 可执行文件"""
+        # 常见的 Node.js 路径
+        possible_paths = [
+            'node',  # 在 PATH 中
+            '/usr/local/bin/node',
+            '/opt/homebrew/bin/node',
+            '/usr/bin/node',
+        ]
+        
+        # 检查环境变量
+        if 'NODE_PATH' in os.environ:
+            node_path = os.path.join(os.environ['NODE_PATH'], 'node')
+            if os.path.exists(node_path):
+                return node_path
+        
+        # 尝试使用 which 查找
+        try:
+            result = subprocess.run(['which', 'node'], capture_output=True, text=True, timeout=2)
+            if result.returncode == 0 and result.stdout.strip():
+                node_path = result.stdout.strip()
+                if os.path.exists(node_path):
+                    return node_path
+        except:
+            pass
+        
+        # 尝试直接查找
+        for path in possible_paths:
+            if path == 'node':
+                # 检查是否在 PATH 中
+                try:
+                    result = subprocess.run([path, '--version'], capture_output=True, timeout=2)
+                    if result.returncode == 0:
+                        return path
+                except:
+                    continue
+            elif os.path.exists(path):
+                return path
+        
+        return None
+    
+    def read_js_code(self, file_path='decryption.js'):
+        """使用 Node.js 执行 JavaScript，返回一个类似 execjs 的上下文对象"""
+        node_path = self._find_node()
+        if not node_path:
+            raise Exception(
+                "未找到 Node.js。\n"
+                "请安装 Node.js：\n"
+                "1. 访问 https://nodejs.org/ 下载安装\n"
+                "2. 或使用 Homebrew: brew install node"
+            )
+        
+        class JSContext:
+            def __init__(self, node_path, executor_path, script_dir):
+                self.node_path = node_path
+                self.executor_path = executor_path
+                self.script_dir = script_dir
+                
+            def call(self, function_name, *args):
+                """调用 JavaScript 函数"""
+                # 准备输入数据
+                if function_name == 'decrypt_params':
+                    input_data = {
+                        'data': args[0],
+                        'localStorage': args[1]
+                    }
+                elif function_name == 'decrypt_result':
+                    input_data = {
+                        'res': args[0],
+                        'localStorage': args[1]
+                    }
+                else:
+                    raise ValueError(f"未知函数: {function_name}")
+                
+                # 切换到脚本目录执行 Node.js
+                try:
+                    result = subprocess.run(
+                        [self.node_path, self.executor_path, function_name, json.dumps(input_data)],
+                        cwd=self.script_dir,
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    
+                    if result.returncode != 0:
+                        try:
+                            error_info = json.loads(result.stderr) if result.stderr else {"error": "未知错误"}
+                            error_msg = error_info.get('error', result.stderr)
+                        except:
+                            error_msg = result.stderr or "未知错误"
+                        raise Exception(f"JavaScript 执行失败: {error_msg}")
+                    
+                    return json.loads(result.stdout)
+                except subprocess.TimeoutExpired:
+                    raise Exception("JavaScript 执行超时")
+                except json.JSONDecodeError as e:
+                    raise Exception(f"解析 JavaScript 返回结果失败: {e}, 输出: {result.stdout if 'result' in locals() else 'N/A'}")
+                except FileNotFoundError:
+                    raise Exception(f"未找到 Node.js 可执行文件: {self.node_path}")
+        
+        return JSContext(node_path, self.js_executor, self.script_dir)
 
 
     def get_encrypt_data(self,request_params:dict=None,headers=None,localStorage=None):

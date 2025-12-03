@@ -177,34 +177,53 @@ fn get_smtp_config(app_handle: &tauri::AppHandle) -> SmtpConfig {
     }
 }
 
-fn run_spider_internal(params: SpiderParams) -> Result<String, String> {
-    let mut script_path = std::env::current_dir()
-        .map_err(|e| format!("无法获取当前目录: {}", e))?;
-    
+fn run_spider_internal(app_handle: &tauri::AppHandle, params: SpiderParams) -> Result<String, String> {
+    let mut bin_path = std::path::PathBuf::new();
     let mut found = false;
-    for _ in 0..5 {
-        let test_path = script_path.join("中国石油招标投标网").join("spiders.py");
+    
+    // 1. 优先从应用资源目录查找（打包后的应用使用此路径）
+    if let Ok(resource_dir) = app_handle.path().resource_dir() {
+        let test_path = resource_dir.join("bin").join("spider_bin");
+        println!("[爬虫] 检查资源目录: {:?}", test_path);
         if test_path.exists() {
-            script_path = test_path;
+            bin_path = test_path;
             found = true;
-            break;
-        }
-        if let Some(parent) = script_path.parent() {
-            script_path = parent.to_path_buf();
-        } else {
-            break;
+            println!("[爬虫] ✅ 在资源目录找到可执行文件");
         }
     }
     
+    // 2. 从当前工作目录向上查找（开发环境使用）
+    if !found {
+        if let Ok(mut search_dir) = std::env::current_dir() {
+            for _ in 0..5 {
+                // 优先查找打包后的二进制文件
+                let test_path = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin");
+                if test_path.exists() {
+                    bin_path = test_path;
+                    found = true;
+                    println!("[爬虫] ✅ 在工作目录找到可执行文件: {:?}", bin_path);
+                    break;
+                }
+                if let Some(parent) = search_dir.parent() {
+                    search_dir = parent.to_path_buf();
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+    
+    // 3. 从可执行文件目录向上查找
     if !found {
         if let Ok(exe_path) = std::env::current_exe() {
             if let Some(exe_dir) = exe_path.parent() {
                 let mut search_dir = exe_dir.to_path_buf();
                 for _ in 0..5 {
-                    let test_path = search_dir.join("中国石油招标投标网").join("spiders.py");
+                    let test_path = search_dir.join("中国石油招标投标网").join("dist").join("spider_bin");
                     if test_path.exists() {
-                        script_path = test_path;
+                        bin_path = test_path;
                         found = true;
+                        println!("[爬虫] ✅ 在可执行文件目录找到: {:?}", bin_path);
                         break;
                     }
                     if let Some(parent) = search_dir.parent() {
@@ -217,28 +236,13 @@ fn run_spider_internal(params: SpiderParams) -> Result<String, String> {
         }
     }
     
-    if !found {
-        let mut search_dir = std::env::current_dir()
-            .map_err(|e| format!("无法获取当前目录: {}", e))?;
-        for _ in 0..10 {
-            let test_path = search_dir.join("中国石油招标投标网").join("spiders.py");
-            if test_path.exists() {
-                script_path = test_path;
-                found = true;
-                break;
-            }
-            if let Some(parent) = search_dir.parent() {
-                search_dir = parent.to_path_buf();
-            } else {
-                break;
-            }
-        }
-    }
-    
-    if !found || !script_path.exists() {
+    if !found || !bin_path.exists() {
+        let resource_path = app_handle.path().resource_dir()
+            .map(|p| p.join("bin").join("spider_bin"))
+            .unwrap_or_default();
         return Err(format!(
-            "Python 脚本不存在。已搜索路径: {:?}\n当前工作目录: {:?}\n请确保 spiders.py 文件存在于 '中国石油招标投标网' 目录中",
-            script_path,
+            "爬虫可执行文件不存在。\n已搜索路径:\n- 资源目录: {:?}\n- 当前工作目录: {:?}",
+            resource_path,
             std::env::current_dir().unwrap_or_default()
         ));
     }
@@ -246,27 +250,11 @@ fn run_spider_internal(params: SpiderParams) -> Result<String, String> {
     let params_json = serde_json::to_string(&params)
         .map_err(|e| format!("序列化参数失败: {}", e))?;
     
-    let output = if Command::new("python3")
-        .arg(script_path.to_str().ok_or("路径转换失败")?)
+    // 直接执行打包后的二进制文件
+    let output = Command::new(&bin_path)
         .arg(&params_json)
-        .current_dir(script_path.parent().ok_or("无法获取脚本目录")?)
         .output()
-        .is_ok()
-    {
-        Command::new("python3")
-            .arg(script_path.to_str().ok_or("路径转换失败")?)
-            .arg(&params_json)
-            .current_dir(script_path.parent().ok_or("无法获取脚本目录")?)
-            .output()
-            .map_err(|e| format!("执行 Python 脚本失败: {}", e))?
-    } else {
-        Command::new("python")
-            .arg(script_path.to_str().ok_or("路径转换失败")?)
-            .arg(&params_json)
-            .current_dir(script_path.parent().ok_or("无法获取脚本目录")?)
-            .output()
-            .map_err(|e| format!("执行 Python 脚本失败: {}", e))?
-    };
+        .map_err(|e| format!("执行爬虫程序失败: {}", e))?;
     
     if output.status.success() {
         let result = String::from_utf8(output.stdout)
@@ -442,10 +430,11 @@ async fn start_scheduled_spider(app_handle: tauri::AppHandle, config: SpiderConf
         let email_clone = email.clone();
         let push_content_clone = push_content.clone();
         let push_content_enabled_clone = push_content_enabled;
+        let app_handle_for_spider = app_handle_clone.clone();
         
         let result = tokio::task::spawn_blocking(move || {
             println!("[定时任务] 正在执行 Python 脚本...");
-            run_spider_internal(params_clone)
+            run_spider_internal(&app_handle_for_spider, params_clone)
         }).await.unwrap_or_else(|e| {
             println!("[定时任务] ❌ 任务执行失败: {}", e);
             Err(format!("任务执行失败: {}", e))
@@ -539,8 +528,16 @@ async fn start_scheduled_spider(app_handle: tauri::AppHandle, config: SpiderConf
 }
 
 #[tauri::command]
-fn run_spider(params: SpiderParams) -> Result<String, String> {
-    run_spider_internal(params)
+async fn run_spider(app_handle: tauri::AppHandle, params: SpiderParams) -> Result<String, String> {
+    // 在后台线程执行，避免阻塞主线程导致 UI 卡死
+    let result = tokio::task::spawn_blocking(move || {
+        run_spider_internal(&app_handle, params)
+    }).await;
+    
+    match result {
+        Ok(res) => res,
+        Err(e) => Err(format!("任务执行失败: {}", e)),
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
