@@ -480,9 +480,9 @@ fn send_email_internal(app_handle: tauri::AppHandle, to: String, subject: String
     
     // 使用 SMTP 发送邮件
     let from_address = if smtp_username.contains('@') {
-        format!("RPA App <{}>", smtp_username)
+        format!("二进制应用 <{}>", smtp_username)
     } else {
-        format!("RPA App <{}@qq.com>", smtp_username)
+        format!("二进制应用 <{}@qq.com>", smtp_username)
     };
     
     // 验证邮箱地址格式
@@ -718,151 +718,6 @@ async fn run_spider(app_handle: tauri::AppHandle, params: SpiderParams) -> Resul
     }
 }
 
-// ============================================================================
-// Python 自动化相关函数
-// ============================================================================
-
-/// 查找 Python 可执行文件
-/// 优先尝试 python3，然后尝试 python
-fn find_python_demo() -> Result<String, String> {
-    let python_candidates = vec!["python3", "python"];
-    
-    for python in python_candidates {
-        // 检查 Python 是否可用
-        if Command::new(python)
-            .arg("--version")
-            .output()
-            .is_ok()
-        {
-            return Ok(python.to_string());
-        }
-    }
-    
-    Err("未找到 Python 可执行文件。请确保已安装 Python 3 并添加到 PATH".to_string())
-}
-
-/// 查找 Python 脚本路径（demo 版本）
-/// 优先从资源目录查找（打包后的应用），然后从当前目录查找（开发环境）
-fn find_python_demo_script(app_handle: &tauri::AppHandle) -> Result<std::path::PathBuf, String> {
-    // 1. 优先从应用资源目录查找（打包后的应用使用此路径）
-    if let Ok(resource_dir) = app_handle.path().resource_dir() {
-        let script_path = resource_dir.join("scripts").join("main.py");
-        if script_path.exists() {
-            return Ok(script_path);
-        }
-    }
-    
-    // 2. 从当前工作目录查找（开发环境使用）
-    if let Ok(mut search_dir) = std::env::current_dir() {
-        for _ in 0..5 {
-            let script_path = search_dir.join("tauri-python-demo").join("scripts").join("main.py");
-            if script_path.exists() {
-                return Ok(script_path);
-            }
-            if let Some(parent) = search_dir.parent() {
-                search_dir = parent.to_path_buf();
-            } else {
-                break;
-            }
-        }
-    }
-    
-    Err("未找到 Python 脚本 main.py".to_string())
-}
-
-/// Tauri 命令：运行自动化任务（demo 版本）
-/// 通过 stdin 发送 JSON 数据给 Python 脚本，从 stdout 接收结果
-#[tauri::command]
-async fn run_automation(
-    app_handle: tauri::AppHandle,
-    url: String,
-    action: String,
-    output: Option<String>,
-) -> Result<String, String> {
-    // 查找 Python
-    let python = find_python_demo()?;
-    
-    // 查找 Python 脚本
-    let script_path = find_python_demo_script(&app_handle)?;
-    
-    // 构造输入数据
-    let input_data = json!({
-        "url": url,
-        "action": action,
-        "output": output.unwrap_or_else(|| "output.txt".to_string())
-    }).to_string();
-    
-    // 在后台线程执行，避免阻塞主线程
-    let result = tokio::task::spawn_blocking(move || {
-        // 启动 Python 进程
-        let mut child = Command::new(&python)
-            .arg(&script_path)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
-            .map_err(|e| format!("启动 Python 进程失败: {}", e))?;
-        
-        // 写入 stdin
-        if let Some(mut stdin) = child.stdin.take() {
-            stdin.write_all(input_data.as_bytes())
-                .map_err(|e| format!("写入输入数据失败: {}", e))?;
-            // stdin 在这里会自动关闭
-        }
-        
-        // 等待进程完成并获取输出
-        let output = child.wait_with_output()
-            .map_err(|e| format!("等待进程完成失败: {}", e))?;
-        
-        if output.status.success() {
-            // 解析 stdout 中的 JSON 结果
-            let result = String::from_utf8(output.stdout)
-                .map_err(|e| format!("解析输出失败: {}", e))?;
-            Ok(result)
-        } else {
-            // 读取 stderr 中的错误信息
-            let error = String::from_utf8(output.stderr)
-                .unwrap_or_else(|_| "未知错误".to_string());
-            Err(format!("Python 脚本执行失败: {}", error))
-        }
-    }).await;
-    
-    match result {
-        Ok(Ok(result)) => Ok(result),
-        Ok(Err(e)) => Err(e),
-        Err(e) => Err(format!("任务执行失败: {}", e)),
-    }
-}
-
-/// Tauri 命令：检测 Python 环境（demo 版本）
-#[tauri::command]
-fn check_python_env() -> Result<serde_json::Value, String> {
-    match find_python_demo() {
-        Ok(python) => {
-            // 获取 Python 版本信息
-            let output = Command::new(&python)
-                .arg("--version")
-                .output()
-                .map_err(|e| format!("获取 Python 版本失败: {}", e))?;
-            
-            let version = String::from_utf8(output.stdout)
-                .unwrap_or_else(|_| "未知版本".to_string())
-                .trim()
-                .to_string();
-            
-            Ok(json!({
-                "available": true,
-                "python_path": python,
-                "version": version
-            }))
-        }
-        Err(e) => Ok(json!({
-            "available": false,
-            "error": e
-        }))
-    }
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -889,7 +744,7 @@ pub fn run() {
                         tauri_plugin_dialog::MessageDialogBuilder::new(
                             dialog,
                             "关于",
-                            "这是我的 Tauri 学习项目 demo：\n- Vue + TypeScript 前端\n- Rust 后端\n- 支持文件读写 / 系统菜单 / 通知"
+                            "二进制应用：\n- Tauri + Rust + Vue + TypeScript\n- 支持 Python/JS 自动化脚本\n- 支持打包二进制执行"
                         )
                         .show(|_| {});
                     }
@@ -904,10 +759,9 @@ pub fn run() {
             send_email,
             start_scheduled_spider,
             save_smtp_config,
-            load_smtp_config,
-            run_automation,
-            check_python_env
+            load_smtp_config
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
+

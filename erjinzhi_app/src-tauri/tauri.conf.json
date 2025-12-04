@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "tauri-lesson-1",
+  "productName": "erjinzhi-app",
   "version": "0.1.0",
-  "identifier": "com.lizhuang.tauri-lesson-1",
+  "identifier": "com.lizhuang.erjinzhi-app",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -12,9 +12,9 @@
   "app": {
     "windows": [
       {
-        "title": "tauri-lesson-1",
-        "width": 800,
-        "height": 600
+        "title": "二进制应用",
+        "width": 1000,
+        "height": 800
       }
     ],
     "security": {
@@ -36,7 +36,8 @@
       "../../中国石油招标投标网/decryption.js": "decryption.js",
       "../../中国石油招标投标网/jsencrypt.js": "jsencrypt.js",
       "../../中国石油招标投标网/js_executor.js": "js_executor.js",
-      "../../tauri-python-demo/scripts/main.py": "scripts/main.py"
+      "../../中国石油招标投标网/dist/spider_bin": "bin/spider_bin"
     }
   }
 }
+

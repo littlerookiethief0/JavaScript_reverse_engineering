@@ -1,8 +1,11 @@
 certifi==2025.11.12
 charset-normalizer==3.4.4
+ddddocr>=1.4.0
 fake-useragent==2.2.0
 idna==3.11
 pyexecjs==1.5.1
+nuitka>=2.0.0
+pywebview>=4.0.0
 requests==2.32.5
 six==1.17.0
 urllib3==2.5.0
